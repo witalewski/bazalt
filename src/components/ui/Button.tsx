@@ -67,10 +67,7 @@ export function Button({
         <Text
           style={[
             styles.text,
-            {
-              color: '#FFFFFF',
-              fontSize: textSizes[size],
-            },
+            { color: v.text, fontSize: textSizes[size] },
             textStyle,
           ]}
         >
