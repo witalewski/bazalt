@@ -21,3 +21,15 @@
 
 - Black and white only, sharp corners, monospace fonts
 - Always specify text color explicitly (color="white" or color="black") - never rely on defaults
+
+## Data Loading
+
+- Always fetch data from Supabase on screen mount using useEffect with [user] dependency
+- The home page must fetch exercises and workouts on mount so counts are always correct
+- Use setExercises/setWorkouts to update the store after CRUD operations
+
+## Environment Variables
+
+- Never commit secrets to git
+- .env.local is gitignored but .env is not - use .env.local for sensitive keys
+- Supabase anon key must be set in .env.local as EXPO_PUBLIC_SUPABASE_KEY
