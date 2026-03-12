@@ -37,7 +37,10 @@ export default function SettingsScreen() {
   };
 
   const handleSeedExercises = async () => {
-    if (!user) return;
+    if (!user) {
+      Alert.alert('Error', 'Please log in first');
+      return;
+    }
     
     Alert.alert(
       'Seed Exercises',
