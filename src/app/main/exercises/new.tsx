@@ -40,11 +40,7 @@ export default function ExerciseNewScreen() {
   });
 
   const onSubmit = async (data: ExerciseFormData) => {
-    console.log('Creating exercise, user:', user);
-    if (!user) {
-      Alert.alert('Error', 'Not logged in');
-      return;
-    }
+    if (!user) return;
     setLoading(true);
 
     try {
@@ -60,15 +56,12 @@ export default function ExerciseNewScreen() {
         .select()
         .single();
 
-      console.log('Insert result:', { exercise, error });
-      
       if (error) throw error;
       if (exercise) {
         addExercise(exercise);
         navigation.goBack();
       }
     } catch (err: any) {
-      console.error('Create exercise error:', err);
       Alert.alert('Error', err.message || 'Failed to create exercise');
     } finally {
       setLoading(false);

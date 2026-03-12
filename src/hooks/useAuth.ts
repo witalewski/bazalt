@@ -10,10 +10,8 @@ export function useAuth() {
     let unsubscribe: (() => void) | undefined;
 
     async function init() {
-      console.log('Auth init...');
       try {
         const currentUser = await getCurrentUser();
-        console.log('Got current user:', currentUser);
         setUser(currentUser);
       } catch (error) {
         console.error('Auth init error:', error);
@@ -26,7 +24,6 @@ export function useAuth() {
     init();
 
     const { data: { subscription } } = onAuthStateChange((user) => {
-      console.log('Auth state changed:', user);
       setUser(user);
     });
 

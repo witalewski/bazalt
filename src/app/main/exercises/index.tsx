@@ -19,11 +19,7 @@ export default function ExerciseListScreen() {
   const activeExercises = exercises.filter(e => !e.is_deleted);
 
   const fetchExercises = async () => {
-    console.log('Fetching exercises, user:', user);
-    if (!user) {
-      console.log('No user, returning early');
-      return;
-    }
+    if (!user) return;
     setLoading(true);
     try {
       const { data, error } = await supabase
@@ -33,11 +29,7 @@ export default function ExerciseListScreen() {
         .eq('is_deleted', false)
         .order('created_at', { ascending: false });
 
-      if (error) {
-        console.error('Supabase error:', error);
-        throw error;
-      }
-      console.log('Fetched exercises:', data);
+      if (error) throw error;
       if (data) setExercises(data);
     } catch (err) {
       console.error('Failed to fetch exercises:', err);
@@ -47,16 +39,10 @@ export default function ExerciseListScreen() {
   };
 
   useEffect(() => {
-    console.log('useEffect triggered, user:', user);
-  }, [user]);
-
-  useEffect(() => {
-    // Also fetch on mount in case user was already set before this component mounted
-    console.log('Mount effect, user:', user);
     if (user) {
       fetchExercises();
     }
-  }, []);
+  }, [user]);
 
   const handleDelete = async (exercise: Exercise) => {
     Alert.alert(
