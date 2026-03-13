@@ -7,8 +7,8 @@ import { z } from 'zod';
 import { Screen, Text, Input, Button } from '../../../components/ui';
 import { ExerciseCard } from '../../../components/ExerciseCard';
 import { useStore } from '../../../lib/store';
-import { supabase } from '../../../lib/supabase';
-import type { Exercise, WorkoutExercise } from '../../../types';
+import { useExercises, useCreateWorkout } from '../../../hooks';
+import type { Exercise } from '../../../types';
 
 const workoutSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -26,7 +26,9 @@ interface SelectedExercise extends Exercise {
 
 export default function WorkoutNewScreen() {
   const navigation = useNavigation();
-  const { user, exercises, addWorkout } = useStore();
+  const { user } = useStore();
+  const { data: exercises = [] } = useExercises(user?.id);
+  const createWorkout = useCreateWorkout();
   const [loading, setLoading] = useState(false);
   const [selectedExercises, setSelectedExercises] = useState<SelectedExercise[]>([]);
   const [showPicker, setShowPicker] = useState(false);
@@ -74,38 +76,20 @@ export default function WorkoutNewScreen() {
     setLoading(true);
 
     try {
-      const { data: workout, error } = await supabase
-        .from('workouts')
-        .insert({
-          user_id: user.id,
-          name: data.name,
-          description: data.description || null,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      const workoutExercises = selectedExercises.map((exercise, index) => ({
-        workout_id: workout.id,
-        exercise_id: exercise.id,
-        order_index: index,
-        target_sets: exercise.target_sets,
-        target_reps: exercise.target_reps,
-        target_weight_kg: exercise.target_weight_kg,
-        target_minutes: exercise.tracking_mode === 'emom' ? 10 : null,
-      }));
-
-      const { error: exercisesError } = await supabase
-        .from('workout_exercises')
-        .insert(workoutExercises);
-
-      if (exercisesError) throw exercisesError;
-
-      if (workout) {
-        addWorkout(workout);
-        navigation.goBack();
-      }
+      await createWorkout.mutateAsync({
+        userId: user.id,
+        name: data.name,
+        description: data.description || null,
+        exercises: selectedExercises.map((exercise, index) => ({
+          exerciseId: exercise.id,
+          orderIndex: index,
+          targetSets: exercise.target_sets,
+          targetReps: exercise.target_reps,
+          targetWeightKg: exercise.target_weight_kg,
+          targetMinutes: exercise.tracking_mode === 'emom' ? 10 : null,
+        })),
+      });
+      navigation.goBack();
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to create workout');
     } finally {

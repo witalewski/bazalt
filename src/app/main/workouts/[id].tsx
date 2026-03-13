@@ -1,68 +1,60 @@
-import { useState, useEffect } from 'react';
-import { View, ScrollView, StyleSheet, Alert, TouchableOpacity, FlatList } from 'react-native';
+import React from 'react';
+import { View, ScrollView, StyleSheet, Alert } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Screen, Text, Input, Button } from '../../../components/ui';
-import { ExerciseCard } from '../../../components/ExerciseCard';
+import { Screen, Text, Button } from '../../../components/ui';
+import { useWorkout, useWorkoutExercises, useDeleteWorkout } from '../../../hooks';
 import { useStore } from '../../../lib/store';
-import { supabase } from '../../../lib/supabase';
-import type { Exercise, WorkoutExercise } from '../../../types';
-import { MainStackParamList } from '../../_layout';
+import { MainStackParamList } from '../_layout';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 type DetailRouteProp = RouteProp<MainStackParamList, 'workout-detail'>;
-
-interface WorkoutExerciseWithDetails extends WorkoutExercise {
-  exercise?: Exercise;
-}
 
 export default function WorkoutDetailScreen() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<DetailRouteProp>();
   const { workoutId } = route.params;
-  const { workouts, exercises } = useStore();
-  
-  const [workout, setWorkout] = useState<any>(null);
-  const [workoutExercisesList, setWorkoutExercisesList] = useState<WorkoutExerciseWithDetails[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const { data: workoutData, error: workoutError } = await supabase
-          .from('workouts')
-          .select('*')
-          .eq('id', workoutId)
-          .single();
-
-        if (workoutError) throw workoutError;
-        if (workoutData) setWorkout(workoutData);
-
-        const { data: exercisesData, error: exercisesError } = await supabase
-          .from('workout_exercises')
-          .select('*, exercise:exercises(*)')
-          .eq('workout_id', workoutId)
-          .order('order_index');
-
-        if (exercisesError) throw exercisesError;
-        if (exercisesData) setWorkoutExercisesList(exercisesData);
-      } catch (err) {
-        console.error('Failed to fetch workout:', err);
-      }
-    };
-
-    fetchData();
-  }, [workoutId]);
+  const { user } = useStore();
+  const { data: workout, isLoading: workoutLoading } = useWorkout(workoutId);
+  const { data: workoutExercises = [], isLoading: exercisesLoading } = useWorkoutExercises(workoutId);
+  const deleteWorkout = useDeleteWorkout();
 
   const handleStart = () => {
     navigation.navigate('workout-start', { workoutId });
   };
 
-  if (!workout) {
+  const handleDelete = () => {
+    if (!workout || !user) return;
+    
+    Alert.alert(
+      'Delete Workout',
+      `Are you sure you want to delete "${workout.name}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteWorkout.mutateAsync({ 
+                workoutId, 
+                userId: user.id 
+              });
+              navigation.goBack();
+            } catch (err) {
+              Alert.alert('Error', 'Failed to delete workout');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  if (workoutLoading || !workout) {
     return (
       <Screen>
         <View style={styles.notFound}>
-          <Text variant="caption" color="muted">WORKOUT NOT FOUND</Text>
+          <Text variant="caption" color="muted">LOADING...</Text>
         </View>
       </Screen>
     );
@@ -81,9 +73,9 @@ export default function WorkoutDetailScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text variant="label" color="muted">EXERCISES ({workoutExercisesList.length})</Text>
+          <Text variant="label" color="muted">EXERCISES ({workoutExercises.length})</Text>
           
-          {workoutExercisesList.map((we, index) => (
+          {workoutExercises.map((we, index) => (
             <View key={we.id} style={styles.exerciseItem}>
               <Text variant="body">
                 {index + 1}. {we.exercise?.name || 'Unknown'}
@@ -112,7 +104,7 @@ export default function WorkoutDetailScreen() {
             </View>
           ))}
 
-          {workoutExercisesList.length === 0 && (
+          {workoutExercises.length === 0 && (
             <View style={styles.empty}>
               <Text variant="caption" color="muted">No exercises in this workout</Text>
             </View>
@@ -126,30 +118,7 @@ export default function WorkoutDetailScreen() {
           />
           <Button
             title="DELETE WORKOUT"
-            onPress={() => {
-              Alert.alert(
-                'Delete Workout',
-                `Are you sure you want to delete "${workout.name}"?`,
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Delete',
-                    style: 'destructive',
-                    onPress: async () => {
-                      try {
-                        await supabase
-                          .from('workouts')
-                          .update({ is_deleted: true })
-                          .eq('id', workoutId);
-                        navigation.goBack();
-                      } catch (err) {
-                        Alert.alert('Error', 'Failed to delete workout');
-                      }
-                    },
-                  },
-                ]
-              );
-            }}
+            onPress={handleDelete}
             variant="ghost"
           />
         </View>

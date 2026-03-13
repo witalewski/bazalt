@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { View, ScrollView, StyleSheet, Alert } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { useForm, Controller } from 'react-hook-form';
@@ -6,8 +6,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Screen, Text, Input, Button } from '../../../components/ui';
 import { useStore } from '../../../lib/store';
-import { supabase } from '../../../lib/supabase';
-import type { TrackingMode, Exercise } from '../../../types';
+import { useExercise, useUpdateExercise } from '../../../hooks';
+import type { TrackingMode } from '../../../types';
 import { MainStackParamList } from '../_layout';
 
 const exerciseSchema = z.object({
@@ -30,56 +30,36 @@ export default function ExerciseEditScreen() {
   const navigation = useNavigation();
   const route = useRoute<EditRouteProp>();
   const { exerciseId } = route.params;
-  const { exercises, updateExercise } = useStore();
+  const { user } = useStore();
+  const { data: exercise, isLoading } = useExercise(exerciseId);
+  const updateExercise = useUpdateExercise();
   const [loading, setLoading] = useState(false);
-  
-  const exercise = exercises.find(e => e.id === exerciseId);
 
   const { control, handleSubmit, formState: { errors }, reset } = useForm<ExerciseFormData>({
     resolver: zodResolver(exerciseSchema),
-    defaultValues: {
-      name: '',
-      description: '',
-      video_link: '',
-      tracking_mode: 'reps',
-    },
+    values: exercise ? {
+      name: exercise.name,
+      description: exercise.description || '',
+      video_link: exercise.video_link || '',
+      tracking_mode: exercise.tracking_mode,
+    } : undefined,
   });
 
-  useEffect(() => {
-    if (exercise) {
-      reset({
-        name: exercise.name,
-        description: exercise.description || '',
-        video_link: exercise.video_link || '',
-        tracking_mode: exercise.tracking_mode,
-      });
-    }
-  }, [exercise]);
-
   const onSubmit = async (data: ExerciseFormData) => {
+    if (!user) return;
     setLoading(true);
 
     try {
-      const { error } = await supabase
-        .from('exercises')
-        .update({
+      await updateExercise.mutateAsync({
+        exerciseId,
+        userId: user.id,
+        updates: {
           name: data.name,
           description: data.description || null,
           video_link: data.video_link || null,
           tracking_mode: data.tracking_mode,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', exerciseId);
-
-      if (error) throw error;
-      
-      updateExercise(exerciseId, {
-        name: data.name,
-        description: data.description || null,
-        video_link: data.video_link || null,
-        tracking_mode: data.tracking_mode,
+        },
       });
-      
       navigation.goBack();
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to update exercise');
@@ -88,11 +68,11 @@ export default function ExerciseEditScreen() {
     }
   };
 
-  if (!exercise) {
+  if (isLoading || !exercise) {
     return (
       <Screen>
         <View style={styles.notFound}>
-          <Text variant="caption" color="muted">EXERCISE NOT FOUND</Text>
+          <Text variant="caption" color="muted">LOADING...</Text>
         </View>
       </Screen>
     );

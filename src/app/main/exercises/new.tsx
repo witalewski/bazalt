@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Screen, Text, Input, Button } from '../../../components/ui';
 import { useStore } from '../../../lib/store';
-import { supabase } from '../../../lib/supabase';
+import { useCreateExercise } from '../../../hooks';
 import type { TrackingMode } from '../../../types';
 
 const exerciseSchema = z.object({
@@ -26,7 +26,8 @@ const TRACKING_OPTIONS: { value: TrackingMode; label: string }[] = [
 
 export default function ExerciseNewScreen() {
   const navigation = useNavigation();
-  const { user, addExercise } = useStore();
+  const { user } = useStore();
+  const createExercise = useCreateExercise();
   const [loading, setLoading] = useState(false);
 
   const { control, handleSubmit, formState: { errors } } = useForm<ExerciseFormData>({
@@ -44,23 +45,14 @@ export default function ExerciseNewScreen() {
     setLoading(true);
 
     try {
-      const { data: exercise, error } = await supabase
-        .from('exercises')
-        .insert({
-          user_id: user.id,
-          name: data.name,
-          description: data.description || null,
-          video_link: data.video_link || null,
-          tracking_mode: data.tracking_mode,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-      if (exercise) {
-        addExercise(exercise);
-        navigation.goBack();
-      }
+      await createExercise.mutateAsync({
+        userId: user.id,
+        name: data.name,
+        description: data.description || null,
+        video_link: data.video_link || null,
+        tracking_mode: data.tracking_mode,
+      });
+      navigation.goBack();
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to create exercise');
     } finally {

@@ -1,44 +1,22 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { View, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Screen, Text, Card } from '../../components/ui';
 import { MainStackParamList } from './_layout';
 import { useStore } from '../../lib/store';
-import { supabase } from '../../lib/supabase';
+import { useExercises, useWorkouts } from '../../hooks';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 
 export default function HomeScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const { user, exercises, workouts, activeSession, isOnline, setExercises, setWorkouts } = useStore();
+  const { user, activeSession, isOnline } = useStore();
+  const { data: exercises = [] } = useExercises(user?.id);
+  const { data: workouts = [] } = useWorkouts(user?.id);
 
   const activeExercises = exercises.filter(e => !e.is_deleted);
   const activeWorkouts = workouts.filter(w => !w.is_deleted);
-
-  useEffect(() => {
-    async function fetchData() {
-      if (!user) return;
-      
-      // Fetch exercises
-      const { data: exercisesData } = await supabase
-        .from('exercises')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('is_deleted', false);
-      if (exercisesData) setExercises(exercisesData);
-
-      // Fetch workouts
-      const { data: workoutsData } = await supabase
-        .from('workouts')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('is_deleted', false);
-      if (workoutsData) setWorkouts(workoutsData);
-    }
-
-    fetchData();
-  }, [user]);
 
   return (
     <Screen>

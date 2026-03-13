@@ -1,52 +1,25 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { View, FlatList, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Screen, Text } from '../../../components/ui';
 import { WorkoutCard } from '../../../components/WorkoutCard';
-import { MainStackParamList } from '../../_layout';
+import { MainStackParamList } from '../_layout';
 import { useStore } from '../../../lib/store';
-import { supabase } from '../../../lib/supabase';
+import { useWorkouts, useDeleteWorkout } from '../../../hooks';
 import type { Workout } from '../../../types';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 
 export default function WorkoutListScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const { user, workouts, setWorkouts } = useStore();
-  const [loading, setLoading] = useState(false);
+  const { user } = useStore();
+  const { data: workouts = [], isLoading } = useWorkouts(user?.id);
+  const deleteWorkout = useDeleteWorkout();
 
   const activeWorkouts = workouts.filter(w => !w.is_deleted);
 
-  const fetchWorkouts = async () => {
-    if (!user) return;
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('workouts')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('is_deleted', false)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      if (data) setWorkouts(data);
-    } catch (err) {
-      console.error('Failed to fetch workouts:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchWorkouts();
-  }, [user]);
-
-  const getExerciseCount = (workoutId: string) => {
-    return 0;
-  };
-
-  const handleDelete = async (workout: Workout) => {
+  const handleDelete = (workout: Workout) => {
     Alert.alert(
       'Delete Workout',
       `Are you sure you want to delete "${workout.name}"?`,
@@ -57,14 +30,10 @@ export default function WorkoutListScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              const { error } = await supabase
-                .from('workouts')
-                .update({ is_deleted: true })
-                .eq('id', workout.id);
-              if (error) throw error;
-              setWorkouts(workouts.map(w => 
-                w.id === workout.id ? { ...w, is_deleted: true } : w
-              ));
+              await deleteWorkout.mutateAsync({ 
+                workoutId: workout.id, 
+                userId: user!.id 
+              });
             } catch (err) {
               Alert.alert('Error', 'Failed to delete workout');
             }
@@ -77,7 +46,7 @@ export default function WorkoutListScreen() {
   const renderItem = ({ item }: { item: Workout }) => (
     <WorkoutCard
       workout={item}
-      exerciseCount={getExerciseCount(item.id)}
+      exerciseCount={0}
       onPress={() => navigation.navigate('workout-detail', { workoutId: item.id })}
       onLongPress={() => handleDelete(item)}
     />

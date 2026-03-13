@@ -5,16 +5,18 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Screen, Text, Input, Button } from '../../../components/ui';
 import { Timer } from '../../../components/Timer';
 import { useStore } from '../../../lib/store';
-import { supabase } from '../../../lib/supabase';
-import type { WorkoutExercise, Exercise, ExerciseLog, WorkoutSession } from '../../../types';
-import { MainStackParamList } from '../../_layout';
+import { 
+  useWorkoutSession, 
+  useWorkoutExercises, 
+  useExerciseLogs, 
+  useLogExerciseSet, 
+  useFinishWorkoutSession,
+  ExerciseLogWithExercise,
+} from '../../../hooks';
+import { MainStackParamList } from '../_layout';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 type TrackRouteProp = RouteProp<MainStackParamList, 'track-session'>;
-
-interface WorkoutExerciseWithDetails extends WorkoutExercise {
-  exercise?: Exercise;
-}
 
 interface SetLog {
   set_number: number;
@@ -28,10 +30,14 @@ export default function TrackSessionScreen() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<TrackRouteProp>();
   const { sessionId } = route.params;
-  const { user, clearSession } = useStore();
+  const { user } = useStore();
   
-  const [session, setSession] = useState<WorkoutSession | null>(null);
-  const [workoutExercises, setWorkoutExercises] = useState<WorkoutExerciseWithDetails[]>([]);
+  const { data: session, isLoading: sessionLoading } = useWorkoutSession(sessionId);
+  const { data: workoutExercises = [], isLoading: exercisesLoading } = useWorkoutExercises(session?.workout_id || '');
+  const { data: exerciseLogsData = [] } = useExerciseLogs(sessionId);
+  const logExerciseSet = useLogExerciseSet();
+  const finishWorkoutSession = useFinishWorkoutSession();
+  
   const [exerciseLogs, setExerciseLogs] = useState<Record<string, SetLog[]>>({});
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
   const [showTimer, setShowTimer] = useState(false);
@@ -40,63 +46,31 @@ export default function TrackSessionScreen() {
 
   const selectedExercise = workoutExercises.find(we => we.exercise_id === selectedExerciseId);
 
-  const fetchSession = async () => {
-    try {
-      const { data: sessionData, error: sessionError } = await supabase
-        .from('workout_sessions')
-        .select('*, workout:workouts(*)')
-        .eq('id', sessionId)
-        .single();
-
-      if (sessionError) throw sessionError;
-      if (sessionData) setSession(sessionData);
-
-      if (sessionData?.workout_id) {
-        const { data: weData, error: weError } = await supabase
-          .from('workout_exercises')
-          .select('*, exercise:exercises(*)')
-          .eq('workout_id', sessionData.workout_id)
-          .order('order_index');
-
-        if (weError) throw weError;
-        if (weData) setWorkoutExercises(weData);
-      }
-
-      const { data: logsData, error: logsError } = await supabase
-        .from('exercise_logs')
-        .select('*, exercise:exercises(*)')
-        .eq('session_id', sessionId)
-        .eq('is_deleted', false)
-        .order('logged_at');
-
-      if (logsError) throw logsError;
-      if (logsData) {
-        const grouped: Record<string, SetLog[]> = {};
-        logsData.forEach((log: ExerciseLog) => {
-          if (!grouped[log.exercise_id || '']) {
-            grouped[log.exercise_id || ''] = [];
-          }
-          grouped[log.exercise_id || ''].push({
-            set_number: log.set_number,
-            reps: log.reps?.toString() || '',
-            weight: log.weight_kg?.toString() || '',
-            time: log.time_seconds?.toString() || '',
-            is_completed: log.is_completed,
-          });
-        });
-        setExerciseLogs(grouped);
-      }
-    } catch (err) {
-      console.error('Failed to fetch session:', err);
-    }
-  };
-
   useEffect(() => {
-    fetchSession();
-  }, [sessionId]);
+    if (exerciseLogsData.length > 0) {
+      const grouped: Record<string, SetLog[]> = {};
+      exerciseLogsData.forEach((log) => {
+        const exerciseId = log.exercise_id || '';
+        if (!grouped[exerciseId]) {
+          grouped[exerciseId] = [];
+        }
+        grouped[exerciseId].push({
+          set_number: log.set_number,
+          reps: log.reps?.toString() || '',
+          weight: log.weight_kg?.toString() || '',
+          time: log.time_seconds?.toString() || '',
+          is_completed: log.is_completed,
+        });
+      });
+      setExerciseLogs(grouped);
+    }
+  }, [exerciseLogsData]);
 
-  const initializeSetLogs = useCallback((exercise: WorkoutExerciseWithDetails) => {
-    if (exerciseLogs[exercise.exercise_id]) return;
+  const initializeSetLogs = useCallback((exerciseId: string) => {
+    if (exerciseLogs[exerciseId]) return;
+    
+    const exercise = workoutExercises.find(we => we.exercise_id === exerciseId);
+    if (!exercise) return;
     
     const sets: SetLog[] = [];
     const numSets = exercise.exercise?.tracking_mode === 'emom' 
@@ -116,38 +90,29 @@ export default function TrackSessionScreen() {
     }
     setExerciseLogs(prev => ({
       ...prev,
-      [exercise.exercise_id]: sets,
+      [exerciseId]: sets,
     }));
-  }, [exerciseLogs]);
+  }, [exerciseLogs, workoutExercises]);
 
-  const handleCompleteSet = async (exercise: WorkoutExerciseWithDetails, setIndex: number) => {
+  const handleCompleteSet = async (exerciseId: string, setIndex: number) => {
     if (!user) return;
-    const setLog = exerciseLogs[exercise.exercise_id]?.[setIndex];
+    const setLog = exerciseLogs[exerciseId]?.[setIndex];
     if (!setLog) return;
 
     setLoading(true);
     try {
-      const logData = {
-        session_id: sessionId,
-        exercise_id: exercise.exercise_id,
-        set_number: setIndex + 1,
+      await logExerciseSet.mutateAsync({
+        sessionId,
+        exerciseId,
+        setNumber: setIndex + 1,
         reps: setLog.reps ? parseInt(setLog.reps) : null,
-        weight_kg: setLog.weight ? parseFloat(setLog.weight) : null,
-        time_seconds: setLog.time ? parseInt(setLog.time) : null,
-        is_completed: true,
-        completed_at: new Date().toISOString(),
-        logged_at: new Date().toISOString(),
-      };
-
-      const { error } = await supabase
-        .from('exercise_logs')
-        .insert(logData);
-
-      if (error) throw error;
+        weightKg: setLog.weight ? parseFloat(setLog.weight) : null,
+        timeSeconds: setLog.time ? parseInt(setLog.time) : null,
+      });
 
       setExerciseLogs(prev => ({
         ...prev,
-        [exercise.exercise_id]: prev[exercise.exercise_id].map((s, i) =>
+        [exerciseId]: prev[exerciseId].map((s, i) =>
           i === setIndex ? { ...s, is_completed: true } : s
         ),
       }));
@@ -169,12 +134,7 @@ export default function TrackSessionScreen() {
           onPress: async () => {
             setLoading(true);
             try {
-              await supabase
-                .from('workout_sessions')
-                .update({ completed_at: new Date().toISOString() })
-                .eq('id', sessionId);
-
-              clearSession();
+              await finishWorkoutSession.mutateAsync({ sessionId });
               navigation.popToTop();
             } catch (err: any) {
               Alert.alert('Error', err.message || 'Failed to finish workout');
@@ -187,7 +147,7 @@ export default function TrackSessionScreen() {
     );
   };
 
-  const renderExerciseItem = ({ item }: { item: WorkoutExerciseWithDetails }) => {
+  const renderExerciseItem = ({ item }: { item: typeof workoutExercises[0] }) => {
     const logs = exerciseLogs[item.exercise_id] || [];
     const completedSets = logs.filter(l => l.is_completed).length;
     const totalSets = item.exercise?.tracking_mode === 'emom' 
@@ -202,7 +162,7 @@ export default function TrackSessionScreen() {
         ]}
         onPress={() => {
           setSelectedExerciseId(item.exercise_id);
-          initializeSetLogs(item);
+          initializeSetLogs(item.exercise_id);
         }}
       >
         <View style={styles.exerciseHeader}>
@@ -223,8 +183,9 @@ export default function TrackSessionScreen() {
     );
   };
 
-  const renderSetInput = (setIndex: number, setLog: SetLog, exercise: WorkoutExerciseWithDetails) => {
-    const trackingMode = exercise.exercise?.tracking_mode;
+  const renderSetInput = (setIndex: number, setLog: SetLog, exerciseId: string) => {
+    const exercise = workoutExercises.find(we => we.exercise_id === exerciseId);
+    const trackingMode = exercise?.exercise?.tracking_mode;
 
     return (
       <View key={setIndex} style={[styles.setRow, setLog.is_completed && styles.setRowCompleted]}>
@@ -241,7 +202,7 @@ export default function TrackSessionScreen() {
                 onChangeText={(text) => {
                   setExerciseLogs(prev => ({
                     ...prev,
-                    [exercise.exercise_id]: prev[exercise.exercise_id].map((s, i) =>
+                    [exerciseId]: prev[exerciseId].map((s, i) =>
                       i === setIndex ? { ...s, reps: text } : s
                     ),
                   }));
@@ -262,7 +223,7 @@ export default function TrackSessionScreen() {
                   onChangeText={(text) => {
                     setExerciseLogs(prev => ({
                       ...prev,
-                      [exercise.exercise_id]: prev[exercise.exercise_id].map((s, i) =>
+                      [exerciseId]: prev[exerciseId].map((s, i) =>
                         i === setIndex ? { ...s, reps: text } : s
                       ),
                     }));
@@ -281,7 +242,7 @@ export default function TrackSessionScreen() {
                   onChangeText={(text) => {
                     setExerciseLogs(prev => ({
                       ...prev,
-                      [exercise.exercise_id]: prev[exercise.exercise_id].map((s, i) =>
+                      [exerciseId]: prev[exerciseId].map((s, i) =>
                         i === setIndex ? { ...s, time: text } : s
                       ),
                     }));
@@ -299,7 +260,7 @@ export default function TrackSessionScreen() {
                 onChangeText={(text) => {
                   setExerciseLogs(prev => ({
                     ...prev,
-                    [exercise.exercise_id]: prev[exercise.exercise_id].map((s, i) =>
+                    [exerciseId]: prev[exerciseId].map((s, i) =>
                       i === setIndex ? { ...s, weight: text } : s
                     ),
                   }));
@@ -318,7 +279,7 @@ export default function TrackSessionScreen() {
           ) : (
             <Button
               title="✓"
-              onPress={() => handleCompleteSet(exercise, setIndex)}
+              onPress={() => handleCompleteSet(exerciseId, setIndex)}
               size="sm"
             />
           )}
@@ -326,6 +287,16 @@ export default function TrackSessionScreen() {
       </View>
     );
   };
+
+  if (sessionLoading || !session) {
+    return (
+      <Screen>
+        <View style={styles.notFound}>
+          <Text variant="caption" color="muted">LOADING...</Text>
+        </View>
+      </Screen>
+    );
+  }
 
   return (
     <Screen>
@@ -383,7 +354,7 @@ export default function TrackSessionScreen() {
 
             <View style={styles.sets}>
               {(exerciseLogs[selectedExercise.exercise_id] || []).map((setLog, index) =>
-                renderSetInput(index, setLog, selectedExercise)
+                renderSetInput(index, setLog, selectedExercise.exercise_id)
               )}
             </View>
           </View>
@@ -405,6 +376,11 @@ export default function TrackSessionScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  notFound: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   header: {
     padding: 16,

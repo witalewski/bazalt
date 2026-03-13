@@ -22,11 +22,31 @@
 - Black and white only, sharp corners, monospace fonts
 - Always specify text color explicitly (color="white" or color="black") - never rely on defaults
 
-## Data Loading
+## Data Fetching with TanStack Query
 
-- Always fetch data from Supabase on screen mount using useEffect with [user] dependency
-- The home page must fetch exercises and workouts on mount so counts are always correct
-- Use setExercises/setWorkouts to update the store after CRUD operations
+All data fetching MUST use TanStack Query hooks from `src/hooks/`. Never use useEffect for data fetching.
+
+### Pattern
+
+1. **Queries** - Use `useQuery` hooks for reading data (e.g., `useExercises`, `useWorkouts`, `useWorkoutSession`)
+2. **Mutations** - Use `useMutation` hooks for creating/updating/deleting data (e.g., `useCreateExercise`, `useDeleteWorkout`)
+3. **Query Keys** - Centralized in `src/lib/queryKeys.ts` for consistent cache management
+4. **Cache Invalidation** - Mutations automatically invalidate relevant caches via `queryClient.invalidateQueries`
+
+### Example
+
+```tsx
+function MyScreen() {
+  const { user } = useStore();
+  const { data: exercises = [], isLoading } = useExercises(user?.id);
+  const createExercise = useCreateExercise();
+
+  const handleCreate = async (data) => {
+    await createExercise.mutateAsync({ userId: user.id, ...data });
+    navigation.goBack();
+  };
+}
+```
 
 ## Environment Variables
 

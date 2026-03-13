@@ -1,79 +1,35 @@
-import { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { View, ScrollView, StyleSheet, Alert } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Screen, Text, Button } from '../../../components/ui';
+import { useWorkout, useWorkoutExercises, useCreateWorkoutSession } from '../../../hooks';
 import { useStore } from '../../../lib/store';
-import { supabase } from '../../../lib/supabase';
-import type { WorkoutExercise, Exercise, WorkoutSession } from '../../../types';
-import { MainStackParamList } from '../../_layout';
+import { MainStackParamList } from '../_layout';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 type StartRouteProp = RouteProp<MainStackParamList, 'workout-start'>;
-
-interface WorkoutExerciseWithDetails extends WorkoutExercise {
-  exercise?: Exercise;
-}
 
 export default function WorkoutStartScreen() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<StartRouteProp>();
   const { workoutId } = route.params;
-  const { user, setActiveSession } = useStore();
-  
-  const [workout, setWorkout] = useState<any>(null);
-  const [workoutExercises, setWorkoutExercises] = useState<WorkoutExerciseWithDetails[]>([]);
+  const { user } = useStore();
+  const { data: workout, isLoading: workoutLoading } = useWorkout(workoutId);
+  const { data: workoutExercises = [], isLoading: exercisesLoading } = useWorkoutExercises(workoutId);
+  const createSession = useCreateWorkoutSession();
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const { data: workoutData, error: workoutError } = await supabase
-          .from('workouts')
-          .select('*')
-          .eq('id', workoutId)
-          .single();
-
-        if (workoutError) throw workoutError;
-        if (workoutData) setWorkout(workoutData);
-
-        const { data: exercisesData, error: exercisesError } = await supabase
-          .from('workout_exercises')
-          .select('*, exercise:exercises(*)')
-          .eq('workout_id', workoutId)
-          .order('order_index');
-
-        if (exercisesError) throw exercisesError;
-        if (exercisesData) setWorkoutExercises(exercisesData);
-      } catch (err) {
-        console.error('Failed to fetch workout:', err);
-      }
-    };
-
-    fetchData();
-  }, [workoutId]);
 
   const handleStart = async () => {
     if (!user) return;
     setLoading(true);
 
     try {
-      const { data: session, error } = await supabase
-        .from('workout_sessions')
-        .insert({
-          user_id: user.id,
-          workout_id: workoutId,
-          started_at: new Date().toISOString(),
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      if (session) {
-        setActiveSession(session);
-        navigation.replace('track-session', { sessionId: session.id });
-      }
+      const session = await createSession.mutateAsync({
+        userId: user.id,
+        workoutId,
+      });
+      navigation.replace('track-session', { sessionId: session.id });
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to start workout');
     } finally {
@@ -81,11 +37,11 @@ export default function WorkoutStartScreen() {
     }
   };
 
-  if (!workout) {
+  if (workoutLoading || !workout) {
     return (
       <Screen>
         <View style={styles.notFound}>
-          <Text variant="caption" color="muted">WORKOUT NOT FOUND</Text>
+          <Text variant="caption" color="muted">LOADING...</Text>
         </View>
       </Screen>
     );

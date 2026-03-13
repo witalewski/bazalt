@@ -4,7 +4,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Screen, Text, Button } from '../../components/ui';
 import { useStore } from '../../lib/store';
 import { signOut } from '../../lib/auth';
-import { supabase } from '../../lib/supabase';
+import { useSeedExercises } from '../../hooks';
 import { STARTER_EXERCISES } from '../../lib/store';
 import { MainStackParamList } from './_layout';
 
@@ -12,7 +12,8 @@ type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 
 export default function SettingsScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const { user, setExercises, clearSession } = useStore();
+  const { user } = useStore();
+  const seedExercises = useSeedExercises();
 
   const handleSignOut = async () => {
     Alert.alert(
@@ -26,7 +27,6 @@ export default function SettingsScreen() {
           onPress: async () => {
             try {
               await signOut();
-              clearSession();
             } catch (err: any) {
               Alert.alert('Error', err.message || 'Failed to sign out');
             }
@@ -51,19 +51,10 @@ export default function SettingsScreen() {
           text: 'Add',
           onPress: async () => {
             try {
-              const exercisesToInsert = STARTER_EXERCISES.map(e => ({
-                ...e,
-                user_id: user.id,
-              }));
-
-              const { data, error } = await supabase
-                .from('exercises')
-                .insert(exercisesToInsert)
-                .select();
-
-              if (error) throw error;
-              if (data) setExercises([...data]);
-              
+              await seedExercises.mutateAsync({
+                userId: user.id,
+                exercises: STARTER_EXERCISES,
+              });
               Alert.alert('Success', 'Starter exercises added!');
             } catch (err: any) {
               Alert.alert('Error', err.message || 'Failed to add exercises');
